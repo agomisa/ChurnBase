@@ -2,7 +2,6 @@
 
 📌 Overview
 
-This repository contains my solution to Data Scientist Take-Home Exercise 1, simulating a Staff-level Data Scientist role at Acme Streaming.
 The task focuses on transforming raw behavioral logs into:
 
   - Trusted analytical insights
