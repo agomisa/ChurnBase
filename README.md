@@ -1,6 +1,7 @@
-# ChurnBase
+# Project
 
 📌 Overview
+
 This repository contains my solution to Data Scientist Take-Home Exercise 1, simulating a Staff-level Data Scientist role at Acme Streaming.
 The task focuses on transforming raw behavioral logs into:
 
@@ -28,16 +29,15 @@ Recent analysis shows early churn exceeding forecasts. The project aims to:
 📂 Project Structure
 
 ```
-├── notebooks/                  # Data engineering, analysis, modelling
-├── src/                        # Helper functions, ETL scripts
-├── dashboards/                 # Superset / Metabase / Redash dashboards
-├── tests/                      # Unit tests
-├── ENVIRONMENT.md              # Setup instructions
+├── notebooks/                  # All notebooks
+├── data_modeling/              # Data analysis and feature engineering
+├── etl/                        # ETL scripts
 ├── requirements.txt            # Python dependencies
 └── README.md                   # Project documentation
 ```
 
 📋 Assignment Steps
+
 1. Data Engineering (Spark)
 Ingest raw data into bronze → silver → gold layers (Parquet or Delta)
 Document schema, partitioning, and data-quality checks (late records, outliers, etc.)
@@ -48,15 +48,14 @@ Identify at least three data quirks (e.g., seasonality, sparsity, leakage) and d
 
 3. Feature Engineering & Modelling
 Define churn as a binary classification problem (clear churn window)
-Train and justify one chosen algorithm
+Train and test algorithm
 Perform hyper-parameter tuning (CV, Hyperopt, or Bayesian search)
 Evaluate using ROC-AUC and PR-AUC
 Use SHAP or permutation importance for explainability
+Confusion Matrix
 
 4. BI Dashboard & Data Story
-Build in Superset, Metabase, or Redash (dashboard = narrative)
-Include: churn funnel, cohort heatmap, filtering, explainable model outputs
-No slides — dashboard is the presentation
+Build in Power BI: churn funnel, cohort heatmap, filtering, model outputs
 
 📦 Deliverables
 Git repository with:
