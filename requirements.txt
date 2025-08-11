@@ -1,0 +1,6 @@
+lightgbm>=4.0.0
+numpy
+pandas
+scikit-learn
+shap>=0.45.0
+optuna
