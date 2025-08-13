@@ -1,10 +1,7 @@
 # Project Documentation
 
-## Objective
-This document ...
-
-
 ## Table of Contents
+0. [Links](#0-links)
 1. [Overview](#1-overview)  
    1.1 [Mission](#11-mission)  
    1.2 [Business Problem & Objectives](#12-business-problem--objectives)  
@@ -16,12 +13,28 @@ This document ...
    3.3 [Silver Layer – Data Cleaning and Quality Checks](#33-silver-layer--data-cleaning-and-quality-checks)  
    3.4 [Gold Layer – Daily Aggregation](#34-gold-layer--daily-aggregation)  
 4. [Exploratory Data Analysis](#4-exploratory-data-analysis)  
-5. [Feature Engineering & Modeling](#5-feature-engineering--modeling)  
-6. [Model Evaluation & Metrics](#6-model-evaluation--metrics)  
-7. [BI Dashboard](#7-BI-Dashboard)  
+   4.1 [Engagement KPIs](#41-kpis-computed)  
+   4.2 [Data quirks and mitigations](#42-data-quirks-and-mitigations)  
+   4.3 [Missing dates for each domain](#43-missing-dates-for-each-domain)  
+5. [Feature Engineering](#5-feature-engineering)  
+   5.1 [Daily Series Patching (Gap Filling)](#51-daily-series-patching-gap-filling)  
+   5.2 [Churn Definition](#52-churn-definition)  
+   5.3 [Feature Set](#53-feature-set)  
+6. [Preprocessing, Model Training & Hyperparameter Tuning](#6-preprocessing-model-training--hyperparameter-tuning)  
+   6.1 [Preprocessing of Categorical and Temporal Features](#61-preprocessing-of-categorical-and-temporal-features)  
+   6.2 [Model Selection & Hyperparameter Optimization Strategy](#62-model-selection--hyperparameter-optimization-strategy)  
+   6.3 [Final Model Training](#63-final-model-training)  
+7. [Model Evaluation](#7-model-evaluation)  
+8. [Model Explainability](#8-model-explainability)  
+9. [BI Dashboard](#9-bi-dashboard)  
 
+
+## 0. Links
+- [🔗 Interactive BI Report](https://app.powerbi.com/view?r=eyJrIjoiNzI0NGQ0NGQtYWI5Yi00ZTcyLWI4ZTktMmU5NzUxN2M0MTE2IiwidCI6IjNlMDUxM2Q2LTY4ZmEtNDE2ZS04ZGUxLTZjNWNkYzMxOWZmYSIsImMiOjR9)
+- [📂 Project Repository](https://github.com/agomisa/ChurnBase)
 
 ## 1. Overview
+
 
 ### 1.1 Mission
 The mission of this project is to design and implement an end-to-end data pipeline that ingests, processes, and analyzes **Wikimedia project view statistics**.  
@@ -83,7 +96,6 @@ The Delta Live Tables flow acts as an **orchestrated data pipeline** — Databri
 - Adds metadata columns `_ingested_at` and `_source_path` for traceability.
 
 
-
 ### 3.3 Silver Layer – Data Cleaning and Quality Checks
 - Parses raw bronze data to extract:
   - `domain_code`
@@ -102,23 +114,25 @@ The Delta Live Tables flow acts as an **orchestrated data pipeline** — Databri
 
 ## 4. Exploratory Data Analysis
 
-**Goal.** 
 Quantify engagement and inspect the raw signal before modeling to inform feature ideas and retention hypotheses.
 
-### 4.1 KPIs computed
+### 4.1 Engagement KPIs
 
 - **DAU / WAU / MAU (Views)**  
   - `DAU_views(t) = Σ_domain count_views(domain, t)`  
-  - `WAU_views(w) = Σ_domain count_views(domain, week(t))`  
+  - `WAU_views(w) = Σ_domain count_views(domain, week(t))`
   - `MAU_views(m) = Σ_domain count_views(domain, month(t))`  
-  Implemented in `plot_engagement_kpis_with_quirks(df)` using Spark group-bys and Pandas plots.
+  Implemented in `plot_engagement_kpis(df)` using Spark group-bys and Pandas plots.
 
 - **Session-length (Proxy)**  
   
-  The dataset is domain-level pageviews (no user/session IDs). We therefore report a **streak proxy**: consecutive active-day stretches by domain.  
-  - `streak_len(domain, t)` = length of the current run of consecutive days with `count_views>0`.  
-  This helps spot durability of engagement without needing user sessions.
-  As all domains are active every day in your dataset, the streak is never broken — so both the average and median streak lengths simply grow from 1 to the total number of days.
+  The dataset contains only domain-level pageviews (no user or session identifiers).  
+  To approximate engagement duration, a **streak length** metric was defined: consecutive active-day stretches by domain.  
+
+  - `streak_len(domain, t)` = length of the current run of consecutive days where `count_views > 0`.  
+
+  This metric serves as a proxy for domain persistence, indicating the durability of engagement without requiring individual session data.  
+  In this dataset, all domains were active every day, so streaks are never broken - both the average and median streak lengths increase linearly from 1 to the total number of observed days.
 
 - **Content Diversity (Domain Diversity)**
   
@@ -134,6 +148,7 @@ Quantify engagement and inspect the raw signal before modeling to inform feature
   Diversity close to 1 → traffic is spread widely across domains.
 
   Conclusion: 
+
   In this dataset, HHI ~ 0.13–0.16 and Diversity ~ 0.84–0.86 suggest that traffic is relatively evenly distributed across domains.
 
 
@@ -158,8 +173,27 @@ Quantify engagement and inspect the raw signal before modeling to inform feature
 
 ![Risk Score Distribution](images\engagement_kpis.png)
 
+### 4.3 Missing dates for each domain
 
-## 5. Feature Engineering & Modeling
+During exploratory analysis, it was identified that some `domain_code` time series contained gaps, missing calendar days between the first and last observed dates.  
+These missing dates were detected by comparing each `event_date` to the lagged previous date per domain.
+
+
+## 5. Feature Engineering
+
+### 5.1 Daily Series Patching (Gap Filling)
+
+The feature engineering pipeline includes a **gap-filling step** to ensure each domain has a complete, contiguous daily time series.  
+This process involves:
+
+- Generating the full date range for each `domain_code`.
+- Filling missing days with `count_views = 0`.
+- Adding a new boolean feature:
+  - `is_missing` - indicates whether the record was synthetically generated due to a gap.
+
+**Importance:**
+- **Stabilizes rolling features** - rolling averages (e.g., `avg_views_past_3d`) remain consistent across time.
+- **Prevents label bias** - avoids misinterpreting missing dates as actual drops in engagement.
 
 ### 5.1 Churn Definition
 
@@ -186,25 +220,59 @@ Additional transformations for the model's input:
 
 To avoid target leakage, all future-looking columns (`views_plus_*`, `min_views_future`, and `threshold`) were removed before training, leaving only historical and non-leaking features in the final model.
 
+### 6. Preprocessing, Model Training & Hyperparameter Tuning
 
-### 5.3 Model Choice
+#### 6.1 Preprocessing of Categorical and Temporal Features:
+The preprocessing pipeline was designed to transform raw tabular data into a model-ready format while ensuring **data integrity** and **leakage prevention**.
 
-We selected **LightGBM** for:
-- High performance on large tabular datasets.
-- No need for extensive scaling.
-- Native categorical handling.
-- Integrated feature importance & SHAP explainability.
+Key steps:
+- **Leakage prevention**: All columns containing future information (`views_plus_1` … `views_plus_7`, `min_views_future`) were removed to ensure the model is trained solely on historically available data at prediction time.
+- **Temporal decomposition**: Datetime columns were converted into discrete components — year, month, day, day of week, quarter, and a weekend indicator — enabling the model to capture periodic and seasonal effects.
+- **Categorical encoding**: Nominal variables, such as `domain_code`, were transformed into numerical representations using label encoding, preserving class distinctions without imposing ordinal relationships.
+- **Preservation of interpretability**: For `domain_code`, an inverse mapping was stored to recover original identifiers during model explainability and reporting phases.
 
-## 6. Model Evaluation & Metrics
+
+#### 6.2 Model Selection & Hyperparameter Optimization Strategy
+LightGBM (Light Gradient Boosting Machine) was selected as the classification algorithm due to its:
+- Computational efficiency on large-scale, high-dimensional datasets.
+- Ability to model non-linear interactions without explicit feature transformations
+- Robustness to missing values and categorical variables.
+- Compatibility with model-agnostic explainability tools (e.g., SHAP, permutation importance).
+- Proven effectiveness in imbalanced classification problems through parameters such as `scale_pos_weight`.
+
+
+A systematic grid search was conducted in combination with **Stratified K-Fold Cross-Validation** (k=5) to ensure robust performance estimation across different dataset partitions.
+
+Search space parameters included:
+- `learning_rate` (gradient step size)
+- `num_leaves` (tree complexity)
+- `max_depth` (maximum tree depth)
+- `min_data_in_leaf` (minimum samples per leaf)
+- `feature_fraction` (fraction of features considered per iteration)
+- `bagging_fraction` and `bagging_freq` (row sampling for regularization)
+
+For **class imbalance mitigation**, the `scale_pos_weight` parameter was set as the ratio of negative to positive samples in the training set, ensuring balanced gradient updates.
+
+The model with the highest **average precision (AP)** across folds was selected, as AP is a more informative metric than ROC-AUC for imbalanced binary classification tasks.
+
+
+#### 6.3 Final Model Training
+The best hyperparameters obtained from the search were used to train the final LightGBM model on the **entire training dataset**. The model outputs:
+- **Risk scores** — predicted churn probabilities
+- **Binary predictions** — based on a tuned decision threshold to maximize F1-score
+
+
+
+## 7. Model Evaluation 
 
 After introducing the `scale_pos_weight` parameter in LightGBM - computed as the ratio of negative to positive samples - the model performance metrics and score distributions changed significantly. This adjustment compensates for class imbalance by assigning more weight to the minority (churn) class during training.
 
-### 6.1  Risk Score Distribution
+### Risk Score Distribution
 The updated risk score histogram shows a more uniform distribution across the probability range, compared to the previous skew toward lower scores. The chosen decision threshold (**0.668**) now lies in the upper range of the probability spectrum, reflecting the model’s recalibration toward detecting more positive churn cases.
 
 ![Risk Score Distribution](images\risk_score.png)
 
-### 6.2 Confusion Matrix
+### Confusion Matrix
 
 At the tuned threshold:
 - **True Negatives (TN):** 46.048  
@@ -216,12 +284,12 @@ This indicates a better balance between precision and recall for the positive cl
 
 ![Confusion Matrix](images\confusion_matrix.png)
 
-### 6.3 ROC Curve & AUC
+### ROC Curve & AUC
 The ROC curve remains strong, with an **AUC of 0.915**. This indicates that the model effectively separates churn and non-churn cases across all possible thresholds, performing significantly better than random guessing (orange diagonal line).
 
 ![ROC Curve](images\AUC.png)
 
-### 6.4 Performance Summary
+### Performance Summary
 
 | Metric           | Class 0 (Non-Churn)         | Class 1 (Churn)            |
 |------------------|-----------------------------|-----------------------------|
@@ -231,7 +299,7 @@ The ROC curve remains strong, with an **AUC of 0.915**. This indicates that the 
 
 The recalibration via `scale_pos_weight` has enhanced the model’s ability to identify churned domains without excessively sacrificing precision, making it more suitable for use cases where catching potential churn is critical.
 
-## 7. Model Explainability
+## 8. Model Explainability
 
 To interpret the LightGBM model’s predictions, we used **SHAP (SHapley Additive exPlanations)**, a model-agnostic explainability framework. SHAP values quantify the contribution of each feature to the model’s prediction for each instance, enabling both **global** (feature importance) and **local** (per-observation) interpretability.
 
@@ -261,5 +329,44 @@ The **SHAP beeswarm plot** reveals how feature values influence churn prediction
 These explainability results suggest that **recent engagement (current and past few days)** is the dominant driver of churn prediction, followed by periodic and domain-specific patterns.  
 This provides actionable intelligence: retention efforts should focus on domains with **sharp recent activity drops**, especially during historically high-risk days of the month.
 
-## 7. BI Dashboard
+## 9. BI Dashboard
+
+An interactive retention and churn analysis dashboard was built in Power BI to serve as the narrative layer for stakeholder presentations.
+The dashboard consolidates the main analytical outputs from the churn prediction pipeline into intuitive visual components.
+
+### Page 1  – Churn Overview
+This view provides an End-of-Period (EOP) KPI summary, where all key figures are calculated at the close of the selected analysis period.  
+
+- **Active Domains**: Total domains at the end of the analysis period.
+- **Retained Domains**: Domains that remained active after the churn window.
+- **Churned Domains**: Domains that fell below the churn threshold.
+- **Retention Rate** and **Churn Rate** KPIs are calculated directly from these counts.
+
+- **Time Series KPIs**  
+  - **Retention Rate**: Shows day-to-day fluctuations in retention, highlighting seasonal or event-driven patterns.
+
+  - **Actual Churn Rate**: Shows day-to-day fluctuations in churn, highlighting seasonal or event-driven patterns.
+
+- **Cohort Heatmap (Join Day × Survival)**  
+  Displays retention over time for domains grouped by their initial observation day (rather than month, due to the dataset’s limited time span).  
+  Each cell represents the percentage of domains from the same daily cohort that remain active after a given number of days.
+
+**Date Filters**  
+Interactive controls allow narrowing the analysis to any specific time range, dynamically updating all KPIs and visualizations.
+
+### Page 2 – Risk Score Analysis
+Incorporates the predictive model outputs to compare estimated churn against actual observed churn:
+- **Actual Churn vs Predicted Churn**: time series comparing real churn to the model’s predicted churn, enabling evaluation of alignment and deviations.
+
+- **Risk Score Distribution**: histogram showing the distribution of predicted churn probabilities (`risk_score`) for all domains.  
+The x-axis represents the churn probability (binned between 0 and 1), and the y-axis indicates the count of domains in each bin.  
+The left-skewed shape, with a concentration of domains in lower probability bins, reflects the model’s tendency to assign low churn risk to the majority of domains, while still capturing a meaningful tail of higher-risk cases.
+
+
+### Analysis of Results
+- The EOP-based cards provide a consistent snapshot of performance at the end of the selected time frame, ensuring comparability across periods.  
+- Retention trends show overall stability during the observed timeframe, with limited variation between days.  
+- Churn rate peaks on certain days may signal event-driven changes in engagement, meriting further investigation.  
+- The predictive model follows the overall churn trend, though peaks in predicted risk can be higher than observed churn, suggesting some overestimation in high-risk scenarios.  
+- The distribution of risk scores is skewed toward lower risk, with a gradual tail toward higher probabilities, supporting targeted interventions on the most vulnerable segments.
 

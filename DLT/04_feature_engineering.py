@@ -3,6 +3,45 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 @dlt.table(
+    name="gold_daily_projectviews_patched",
+    comment="gold_daily_projectviews padded with missing days as count_views=0 if gaps exist and a label is missing true"
+)
+def patched_daily():
+    
+    # check for gaps
+    df = dlt.read("gold_daily_projectviews")
+    w = Window.partitionBy("domain_code").orderBy("event_date")
+    gaps_df = (
+        df
+        .withColumn("prev_date", F.lag("event_date").over(w)) 
+        .withColumn("gap_days", F.datediff("event_date", "prev_date")) 
+        .filter(F.col("prev_date").isNotNull() & (F.col("gap_days") > 1))
+    )
+    print(f'Found {gaps_df.count()} gaps')
+
+    per_dom = df.groupBy("domain_code").agg(
+        F.min("event_date").alias("start_date"),
+        F.max("event_date").alias("end_date")
+    )
+    expanded = (
+        per_dom
+        .withColumn(
+            "event_date",
+            F.explode(F.sequence("start_date", "end_date", F.expr("interval 1 day")))
+        )
+        .select("domain_code", "event_date")
+    )
+
+    patched = (
+        expanded
+        .join(df, ["domain_code", "event_date"], "left") 
+        .withColumn("is_missing", F.when(F.col("count_views").isNull(), True).otherwise(False))
+        .withColumn("count_views", F.coalesce(F.col("count_views"), F.lit(0)).cast("long"))
+    )
+    return patched
+
+
+@dlt.table(
     name="gold_projectviews_fe",
     comment="Churn detection over daily views per domain"
 )
@@ -10,8 +49,8 @@ def gold_churn():
     n = 7
     threshold_factor = 0.3
 
-    # Read the daily summary gold table as input
-    df = dlt.read("gold_daily_projectviews")
+    # Read the daily patched summary gold table as input
+    df = dlt.read("gold_daily_projectviews_patched")
 
     # Window specification: partition by domain_code and order by event_date
     w_order = Window.partitionBy("domain_code").orderBy("event_date")
@@ -42,8 +81,7 @@ def gold_churn():
         F.col("min_views_future").isNotNull() &
         F.col("avg_views_past_3d").isNotNull()
     )
-
-    return df
+    return df.drop('is_missing')
 
 @dlt.table(
     name="vw_churn_retention",

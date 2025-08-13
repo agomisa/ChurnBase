@@ -29,36 +29,32 @@ Recent analysis shows early churn exceeding forecasts. The project aims to:
 
 ```
 ├── notebooks/                  # All notebooks
-├── data_modeling/              # Data analysis and feature engineering
-├── etl/                        # ETL scripts
+├── DLT/                        # ETL scripts
 ├── requirements.txt            # Python dependencies
 └── README.md                   # Project documentation
 ```
 
 📋 Assignment Steps
 
-1. Data Engineering (Spark)
-Ingest raw data into bronze → silver → gold layers (Parquet or Delta)
-Document schema, partitioning, and data-quality checks (late records, outliers, etc.)
+1. Data Engineering:
 
-2. Exploratory Analysis
-Compute engagement KPIs: DAU, WAU, MAU, session length, content diversity
-Identify at least three data quirks (e.g., seasonality, sparsity, leakage) and describe mitigation
+  Ingest raw data into bronze → silver → gold layers (Parquet or Delta).
+  Document schema, partitioning, and data-quality checks (late records, outliers, etc.).
 
-3. Feature Engineering & Modelling
-Define churn as a binary classification problem (clear churn window)
-Train and test algorithm
-Perform hyper-parameter tuning (CV, Hyperopt, or Bayesian search)
-Evaluate using ROC-AUC and PR-AUC
-Use SHAP or permutation importance for explainability
-Confusion Matrix
+2. Exploratory Analysis:
 
-4. BI Dashboard & Data Story
-Build in Power BI: churn funnel, cohort heatmap, filtering, model outputs
+  Compute engagement KPIs: DAU, WAU, MAU, session length, content diversity.
+  Identify at least three data quirks (e.g., seasonality, sparsity, leakage) and describe mitigation.
 
-📦 Deliverables
-Git repository with:
-- Code & notebooks
-- ENVIRONMENT.md for reproducibility
-- Interactive Power BI dashboard 
-- Analytical report 
+3. Feature Engineering & Modelling:
+
+  Define churn as a binary classification problem (clear churn window).
+  Train and test algorithm.
+  Perform hyper-parameter tuning (CV, Hyperopt, or Bayesian search).
+  Evaluate using ROC-AUC and PR-AUC.
+  Use SHAP or permutation importance for explainability.
+  Confusion Matrix.
+
+4. BI Dashboard & Data Story:
+
+  Build in Power BI: churn funnel, cohort heatmap, model outputs.
